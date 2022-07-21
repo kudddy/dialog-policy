@@ -1,5 +1,7 @@
 package handlers
 
+import "strings"
+
 /**
 | ============== Types ============== |
 */
@@ -144,7 +146,7 @@ type InlineKeyboardButton struct {
 	// CallbackData data to be sent in a callback query to the bot when button is pressed, 1-64 bytes.
 	//
 	// optional
-	CallbackData string `json:"callback_data,omitempty"`
+	CallbackData *string `json:"callback_data,omitempty"`
 	// SwitchInlineQuery if set, pressing the button will prompt the user to select one of their chats,
 	// open that chat and insert the bot's username and the specified inline query in the input field.
 	// Can be empty, in which case just the bot's username will be inserted.
@@ -223,7 +225,7 @@ type grammemInfo struct {
 }
 
 type tokenizedElements struct {
-	Text             string
+	Text             string      `json:"text"`
 	RawText          string      `json:"raw_text"`
 	GrammemInfo      grammemInfo `json:"grammem_info"`
 	Lemma            string      `json:"lemma"`
@@ -286,9 +288,9 @@ type strategies struct {
 }
 
 type actions struct {
-	Type     string `json:"left"`
-	Text     string `json:"text"`
-	DeepLink string `json:"deep_link"`
+	Type     string  `json:"left"`
+	Text     string  `json:"text"`
+	DeepLink *string `json:"deep_link"`
 }
 
 type padding struct {
@@ -306,17 +308,17 @@ type margins struct {
 }
 
 type content struct {
-	Url         string  `json:"url"`
-	Hash        string  `json:"hash"`
-	Width       string  `json:"width"`
-	AspectRatio int     `json:"aspect_ratio"`
-	Text        string  `json:"text"`
-	Typeface    string  `json:"typeface"`
-	TextColor   string  `json:"text_color"`
-	MaxLines    int     `json:"max_lines"`
-	Style       string  `json:"default"`
-	Actions     actions `json:"actions"`
-	Margins     margins `json:"margins"`
+	Url         string    `json:"url"`
+	Hash        string    `json:"hash"`
+	Width       string    `json:"width"`
+	AspectRatio int       `json:"aspect_ratio"`
+	Text        string    `json:"text"`
+	Typeface    string    `json:"typeface"`
+	TextColor   string    `json:"text_color"`
+	MaxLines    int       `json:"max_lines"`
+	Style       string    `json:"default"`
+	Actions     []actions `json:"actions"`
+	Margins     margins   `json:"margins"`
 }
 
 type cell struct {
@@ -328,6 +330,10 @@ type cell struct {
 type card struct {
 	Type  string `json:"type"`
 	Cells []cell `json:"cells"`
+}
+
+type Card struct {
+	Card card `json:"card"`
 }
 
 type payloadForSm struct {
@@ -344,7 +350,7 @@ type payloadForSm struct {
 	AppInfo          appInfo       `json:"app_info"`
 	PronounceText    string        `json:"pronounceText"`
 	Emotion          interface{}   `json:"emotion"`
-	Items            []card        `json:"items"`
+	Items            []Card        `json:"items"`
 	AutoListening    bool          `json:"auto_listening"`
 }
 
@@ -356,7 +362,7 @@ type RespFromSmType struct {
 	Payload     payloadForSm `json:"payload"`
 }
 
-func generatePayloadForSm(text string, sessionId string, messageId int) ReqToSmType {
+func generatePayloadForSm(update UpdateType, session sessionData) ReqToSmType {
 
 	messageName := "MESSAGE_TO_SKILL"
 
@@ -375,33 +381,84 @@ func generatePayloadForSm(text string, sessionId string, messageId int) ReqToSmT
 		AffiliationType: "ECOSYSTEM",
 	}
 
+	var elementsList []tokenizedElements
+
+	for _, word := range strings.Split(update.Message.Text, " ") {
+
+		token := tokenizedElements{
+			Text: word,
+		}
+
+		elementsList = append(elementsList, token)
+
+	}
+
 	message := message{
-		OriginalText:                    text,
-		NormalizedText:                  text,
+		OriginalText:                    update.Message.Text,
+		NormalizedText:                  update.Message.Text,
 		OriginalMessageName:             "MESSAGE_FROM_USER",
-		HumanNormalizedText:             text,
-		HumanNormalizedTextWithAnaphora: text,
+		HumanNormalizedText:             update.Message.Text,
+		HumanNormalizedTextWithAnaphora: update.Message.Text,
+		TokenizedElementsList:           elementsList,
 	}
 
 	payload := payload{
 		Intent:         "sberauto_main",
 		OriginalIntent: "food",
-		NewSession:     false,
+		NewSession:     session.newSession,
 		ApplicationId:  "7aa5ae84-c668-4e24-94d8-e35cf053e7a1",
 		AppversionId:   "bbddbed8-a8c6-483f-99b5-516dbae4ea70",
 		ProjectName:    "СберАвто. Подбор автомобиля",
 		AppInfo:        appInfo,
 		Msg:            message,
+		Character: character{
+			Id:     "sber",
+			Name:   "Сбер",
+			Gender: "male",
+			Appeal: "official",
+		},
 	}
 
 	reqToSmType := ReqToSmType{
-		MessageId:   messageId,
-		SessionId:   sessionId,
+		MessageId:   session.messageId,
+		SessionId:   session.sessionId,
 		MessageName: messageName,
 		Payload:     payload,
 		Uuid:        userUuid,
 	}
 
 	return reqToSmType
+
+}
+
+type Buttons struct {
+	text string
+	url  *string
+}
+
+func (data *RespFromSmType) processRespFromSm() (string, string, []Buttons) {
+
+	var str string
+	var buttons []Buttons
+	if len(data.Payload.Items) > 0 {
+		if len(data.Payload.Items[0].Card.Cells) > 0 {
+			for _, value := range data.Payload.Items[0].Card.Cells {
+				if value.Type == "text_cell_view" {
+					str += " " + value.Content.Text
+				} else if value.Type == "button_cell_view" {
+					var but = Buttons{
+						text: value.Content.Text,
+						url:  value.Content.Actions[0].DeepLink,
+					}
+					buttons = append(buttons, but)
+				}
+			}
+			return data.Payload.PronounceText, str, buttons
+		} else {
+			return data.Payload.PronounceText, "", buttons
+		}
+	} else {
+		return data.Payload.PronounceText, "", buttons
+	}
 
 }

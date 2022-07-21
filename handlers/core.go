@@ -18,7 +18,6 @@ func sendReqToSm(urlPath string, outData ReqToSmType) (RespFromSmType, error) {
 		return data, err
 	}
 	bodyBytes := bytes.NewBuffer(body)
-	log.Println(bodyBytes)
 	response, err := http.Post(urlPath, "application/json", bodyBytes)
 
 	if err != nil {
@@ -33,7 +32,9 @@ func sendReqToSm(urlPath string, outData ReqToSmType) (RespFromSmType, error) {
 
 		err = decoder.Decode(&data)
 		return data, nil
+
 	} else {
+		// TODO this logic not true
 		return data, nil
 	}
 }
@@ -48,7 +49,7 @@ func sendReqToTlg(urlPath string, outData OutMessage) error {
 		return err
 	}
 	bodyBytes := bytes.NewBuffer(body)
-	log.Println(bodyBytes)
+
 	response, err := http.Post(urlPath, "application/json", bodyBytes)
 
 	if err != nil {

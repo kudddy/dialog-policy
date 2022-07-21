@@ -1,6 +1,7 @@
 package handlers
 
 import (
+	"log"
 	"sync"
 	"time"
 )
@@ -22,6 +23,9 @@ type sessionData struct {
 	botStatus       bool
 	messageId       int
 	companionUserId int
+	auth            bool
+	busy            bool
+	newSession      bool
 }
 
 type item struct {
@@ -30,12 +34,12 @@ type item struct {
 }
 
 type TTLMap struct {
-	m map[string]*item
+	m map[int]*item
 	l sync.Mutex
 }
 
 func New(ln int, maxTTL int) (m *TTLMap) {
-	m = &TTLMap{m: make(map[string]*item, ln)}
+	m = &TTLMap{m: make(map[int]*item, ln)}
 	go func() {
 		for now := range time.Tick(time.Second) {
 			m.l.Lock()
@@ -54,19 +58,18 @@ func (m *TTLMap) Len() int {
 	return len(m.m)
 }
 
-func (m *TTLMap) IterMid(k string) {
+func (m *TTLMap) IterMid(k int) {
 	m.l.Lock()
 	if it, ok := m.m[k]; ok {
 		it.value.messageId = +1
 		m.m[k] = it
-
 	}
 	m.l.Unlock()
 
 	return
 }
 
-func (m *TTLMap) ChangeBotStatus(k string) {
+func (m *TTLMap) ChangeBotStatus(k int) {
 	m.l.Lock()
 	if it, ok := m.m[k]; ok {
 		it.value.botStatus = false
@@ -77,8 +80,32 @@ func (m *TTLMap) ChangeBotStatus(k string) {
 	return
 }
 
-func (m *TTLMap) Put(k string, v sessionData) {
+func (m *TTLMap) ChangeAuthStatus(k int) {
 	m.l.Lock()
+	if it, ok := m.m[k]; ok {
+		it.value.auth = true
+		m.m[k] = it
+	}
+	m.l.Unlock()
+
+	return
+}
+
+func (m *TTLMap) ChangeBusyStatus(k int) {
+	m.l.Lock()
+	if it, ok := m.m[k]; ok {
+		it.value.busy = false
+		m.m[k] = it
+	}
+	m.l.Unlock()
+
+	return
+}
+
+func (m *TTLMap) Put(k int, v sessionData) {
+	m.l.Lock()
+
+	log.Printf("save session parametrs for id is %d, companion id is %d . log from PUT", k, v.companionUserId)
 	it, _ := m.m[k]
 
 	it = &item{value: v}
@@ -88,7 +115,7 @@ func (m *TTLMap) Put(k string, v sessionData) {
 	m.l.Unlock()
 }
 
-func (m *TTLMap) Get(k string) (v sessionData, found bool) {
+func (m *TTLMap) Get(k int) (v sessionData, found bool) {
 	m.l.Lock()
 	if it, ok := m.m[k]; ok {
 		v = it.value
@@ -100,10 +127,29 @@ func (m *TTLMap) Get(k string) (v sessionData, found bool) {
 
 }
 
-func (m *TTLMap) Delete(k string) {
+func (m *TTLMap) GetRandomAuthOperators() []int {
+	var s []int
+	for key, value := range m.m {
+		if value.value.auth && !value.value.busy {
+			s = append(s, key)
+		}
+	}
+	return s
+}
+
+func (m *TTLMap) ChangeSessionStatus(k int) {
+	m.l.Lock()
+	if it, ok := m.m[k]; ok {
+		it.value.newSession = false
+		m.m[k] = it
+	}
+	m.l.Unlock()
+}
+
+func (m *TTLMap) Delete(k int) {
 	m.l.Lock()
 	delete(m.m, k)
 	m.l.Unlock()
 }
 
-var CacheSystem = New(1000, 30)
+var CacheSystem = New(1000, 1000)
